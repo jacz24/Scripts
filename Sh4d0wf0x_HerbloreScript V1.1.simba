@@ -1,0 +1,666 @@
+program Herblore;
+//{$DEFINE SMART}
+{$i AeroLib/AeroLib.Simba}
+
+var
+  loop: boolean;
+  grimmy_item,clean_item:TItem;
+  vertical:TIntegerArray;
+  cross:TIntegerArray;
+  breakAfterTime, breakLength: Integer;
+
+const
+  P_USERNAME = 'user';
+  P_PASSWORD = 'pass';
+  P_PIN = '6969';
+  HERB_TYPE ='dwarf'; //guam, tarromin, harralander, toadflax, irit, avantoe, kwuarm, snapdragon, cadantine, dwarf
+
+  USEBREAKS = true;
+  breakAfterHours_MIN = 1;
+  breakAfterHours_MAX = 3;
+  breakForMinutes_MIN = 15;
+  breakForMinutes_MAX = 45;
+
+  VERSION = '1.1';
+  procedure declarePlayer();
+begin
+  Me.Name := P_USERNAME;
+  Me.Pass := P_PASSWORD;
+  Me.Pin := P_PIN;
+  Me.Active := True;
+  Me.Member := True;
+end;
+procedure customMouse(point: TPoint);
+begin
+  case random(0, 6) of
+    0..2: BrakeMMouse(point, random(5), random(5), true);
+    3: BrakeMMouse(point, random(5), random(5), false);
+    4..5: MissMouse(point, random(5), random(5));
+    6: HumanMMouse(point, random(5), random(5));
+  end;
+end;
+procedure openBank
+var
+  TPA: TPointArray;
+  ATPA: T2DPointArray;
+  color: TColEx;
+  I: Integer;
+  location: TPoint;
+begin
+
+  //Enter pin
+  if(Interfaces[PINSCREEN].isVisible()) then
+  begin
+    inPin(P_PIN);
+  end
+
+  //Bank has already been opened
+  if(isBankOpen()) then
+  begin
+    exit;
+  end
+
+  color.create(2050647, 21, 0.04,0.09);
+  if (not color.findAllIn(AREA_MS, TPA)) then
+  begin
+    loop := false;
+    exit;
+  end
+
+  ATPA := FloodFillTPA(TPA);
+  if (length(ATPA) <= 0) then
+  begin
+    loop := false;
+    exit;
+  end
+
+  SortATPAFromFirstPoint(ATPA, Point(275, 155));
+  for I:= 0 to high(ATPA) do
+  begin
+     if(length(ATPA[I]) < 36) then
+       continue;
+     location := MiddleTPA(ATPA[I]);
+     customMouse(location);
+     if (waitUpTextMulti(['ank', 'ast'], 300)) then
+     begin
+        fastClick(MOUSE_LEFT);
+         break;
+     end;
+  end;
+  sleep(random(500,700));
+end
+procedure randomBreakTime();
+begin
+  breakAfterTime := GetTimeRunning + (RandomRange(breakAfterHours_MIN, breakAfterHours_MAX) * 3600000) + RandomRange(2000, 3500000);
+  Writeln('breakAfterTime = ' + MsToTime(breakAfterTime, 3));
+  breakLength := (RandomRange(breakForMinutes_MIN, breakForMinutes_MAX) * 60000) + RandomRange(2000, 59000);
+  Writeln('breakLength = ' + MsToTime(breakLength, 3));
+end;
+procedure breakHandlerCustom();
+begin
+writeln('starting breakhandler');
+  while (isLoggedIn) do
+    logoutPlayer;
+  while not (getTimeRunning >= (breakAfterTime + breakLength)) do
+  begin
+    Writeln('Break handler active');
+    Writeln('TimeRunning: ' + MsToTime(getTimeRunning, 3));
+    Writeln('Breaking till: ' + MsToTime((breakAfterTime + breakLength), 3));
+    Writeln('Time left until break is done: ' + MsToTime(((breakAfterTime + breakLength) - getTimeRunning), 3));
+    Sleep(5000);
+    ClearDebug;
+  end;
+  randomBreakTime;
+end;
+procedure initializePlayer();
+begin
+  if (not isLoggedIn()) then
+    begin
+      loginPlayer(false);
+      setAngle(ANGLE_HIGH);
+    end
+  else
+    begin
+      setAngle(ANGLE_HIGH);
+    end
+  randomBreakTime();
+end
+procedure depositHerbs();
+var
+  slots: TIntegerArray;
+  mouse: TPoint;
+begin
+  openBank();
+  Writeln('depositting herbs');
+  //When bank isn't open and interfaces for entering pin not up, leave
+  if (not isBankOpen()) and (not Interfaces[PINSCREEN].isVisible() ) then
+    exit;
+
+  //Enter pin when needed
+  if (Interfaces[PINSCREEN].isVisible()) then
+    inPin(P_PIN);
+  wait(Random(400,500));
+  begin
+    case Random(0,10) of
+    0..9:quickDeposit('inv');
+    10:
+      begin
+        begin
+            mouse := MiddleBox(invBox(1));
+            customMouse(point(mouse.X + random(-5,5),mouse.Y + random(-5,5)));
+            sleep(random(20,100));
+            fastClick(mouse_Right);
+            waitOption('Deposit-All ',random(20,100));
+          end
+        end
+      end
+  end
+end
+procedure antiban();
+begin
+  if (random(0, 20) = 0) then
+    case random(0, 50) of
+    0..35:
+        if (pointInBox(getMousePnt(), intToBox(1, 1, 765, 500))) then
+          MMouseOffClient('random');
+    41..45: hoverSkill(SKILL_HERBLORE, false);
+    46..50: pickUpMouse;
+    end;
+end;
+procedure fetchHerbs();
+var
+  point: TPoint;
+begin
+  openBank();
+
+  if (Length(clean_item.getSlots) > 0) then
+    depositHerbs();
+
+  Writeln('fetchig herbs');
+  //When bank isn't open and interfaces for entering pin not up, leave
+  if (not isBankOpen()) and (not Interfaces[PINSCREEN].isVisible() ) then
+    exit;
+
+  //Enter pin when needed
+  if (Interfaces[PINSCREEN].isVisible()) then
+    inPin(P_PIN);
+
+  if (grimmy_item.getAmount(false) = 0) then
+  begin
+    loop := false;
+    Writeln('no grimmy herbs found');
+  end
+
+
+  begin
+    grimmy_item.findIn(AREA_MS,point);
+    customMouse(point);
+    fastClick(mouse_Right);
+    case random(0,10) of
+      0..8:waitOption('Withdraw-All ',random(300,500));
+      9..10:waitOption('Withdraw-All-but-one', random(300,500));
+    end
+  end
+  closeInterface();
+end
+procedure horizontalPattern(slots:TIntegerArray);
+var
+  I: Integer;
+  mouse: TPoint;
+begin
+  for I:=0 to Length(slots)-1 do
+    begin
+      mouse := MiddleBox(invBox(slots[I]));
+      customMouse(point(mouse.X + random(-5,5),mouse.Y + random(-5,5)));
+      sleep(random(20,100));
+      case random(0,42) of
+        0..41: fastClick(mouse_Left);
+        42:
+          begin
+            fastClick(mouse_Right);
+            waitOption('Clean ',random(20,50));
+          end
+      end
+      sleep(random(50,100));
+    end
+end
+procedure verticalPattern(slots:TIntegerArray);
+var
+  I: Integer;
+  mouse: TPoint;
+begin
+  for I:=0 to Length(vertical)-1 do
+    begin
+      mouse := MiddleBox(invBox(vertical[I]));
+      customMouse(point(mouse.X + random(-5,5),mouse.Y + random(-5,5)));
+      sleep(random(20,100));
+      case random(0,56) of
+        0..55: fastClick(mouse_Left);
+        56:
+          begin
+            fastClick(mouse_Right);
+            waitOption('Clean ',random(20,50));
+          end
+      end
+      sleep(random(50,100));
+    end
+end
+procedure crossPattern(slots:TIntegerArray);
+var
+  I: Integer;
+  mouse: TPoint;
+begin
+  for I:=0 to Length(cross)-1 do
+    begin
+      mouse := MiddleBox(invBox(cross[I]));
+      customMouse(point(mouse.X + random(-5,5),mouse.Y + random(-5,5)));
+      sleep(random(20,100));
+      case random(0,28) of
+        0..27: fastClick(mouse_Left);
+        28:
+          begin
+            fastClick(mouse_Right);
+            waitOption('Clean ',random(20,50));
+          end
+      end
+      sleep(random(50,100));
+    end
+end
+procedure cleanHerbs();
+var
+  slots: TIntegerArray;
+  I: Integer;
+begin
+  Writeln('cleaning herbs');
+  if (isBankOpen) then
+    closeInterface();
+
+  //Implement random paterns.
+  slots := grimmy_item.getSlots();
+
+  //If not using full inventory, choose vertical or horizontal pattern.
+  if Length(slots) < 28 then
+    begin
+      horizontalPattern(slots);
+    end
+  //If size then, every pattern possible. When size is not 28, choose for either
+  else
+    begin
+      case random(0,10) of
+        0:horizontalPattern(slots);
+        1:verticalPattern(slots);
+        2..10:crossPattern(slots);
+      end
+    end
+end
+procedure selectHerbType();
+begin
+  if HERB_TYPE = 'guam' then
+    begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy Guam';
+        BMP := BitmapFromString(18, 12, 'meJx9kjEOwyAMRd3RC9fpUrULQ+' +
+        'QhixeqiqEZsmSI1PsPDXYFBkKlJwbEw/8j4Ap4FzwgYWJGZFm92SR' +
+        '08eNeuwIjizGfP7cec8GzxQW5RBjOulHjHlYWrYVTGCVUxY4r4dXy' +
+        'ULr3FnfkQea5VPxjXaCzcpjninFz8WyWr+N1VhIDNrSlyLTO1nu3S' +
+        'hXP9qIS5kjoFiH+qEtxjfwHvX8x4pqsL8wvXxM=');
+        BMP_TOL := 10;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean Guam';
+        BMP := BitmapFromString(26, 25, 'meJyVlT1vgzAQhsnogZ+QtaMXi6' +
+        'WiKEIiIWoWli4MWbr2/689c+blfGdoil5Fhpwf7sN3hHZouvG9/yQ' +
+        '1lzuJ13iC39XgeqoqtiTRmm/ZILSD3CtpxVvaWzUVQ+L6LYoW0aAb' +
+        '8RZgeS394Vugknwm6TBjZXR4ezRb/i2gmkxkEEp5SyH4zYzk2k0gy' +
+        'IdMs4mKNC+Me00rqM/KoWkCFXVzdruSTB2KwjSNMnu1bg40dkxmPk' +
+        'MpGj8x4nOCCmbRsc3DuWn5PeRImqxgmTbtEB6bYkFDiKjzC7TJ1V/' +
+        'ZdiXQXvJtoe0BGUVX4vj8NBoaozRtfRHTUr944xhybmlTQUyLMwTB' +
+        '2uMq3DugIUycfzA1TQQVafMujZudB05C2SOapwgeSiFpaIFC90kay' +
+        'jovMijQsoxZGkvSnovmJDhGE56kx9R+PyZ/ngL4vVUzToxutEPvuL' +
+        'uJQLHXPzVKg+HsPw5ph22OaYO8kf5FkyMryGv9KkmDPxXU1Q4U3fa' +
+        'putx/AVz+94A=');
+        BMP_TOL := 50;
+      end
+    end
+  else if HERB_TYPE = 'tarromin' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy Tarromin';
+        BMP := BitmapFromString(15, 14, 'meJx1kTEKwkAQRbWbZsErWIiIhS' +
+        'KCKIIimCKFaYKQQpsUKQQbC8HCwnt4V1/4MoYswmNJZt9O/mwGqY1' +
+        'yGxc2Odu0tFll80tY3gLrMDNglyKE4jr4IwN1QQWQOWvr9Mc2a7J+' +
+        'BPosrgEke2dbJq0jyJtncNn2eSsGdTKs7gFTslIBcj8xkvs4TRkTe' +
+        'BaYLmscfSWWee12OpixXI9wLK2otq9vHlCdtP9kUH9wWdNBLIfTJZ' +
+        'bd5xd4UfcG5JFc90myJvprOq57w7ddWu+meYx8HK6C9fDuecJWEoV' +
+        'xX3wAs9KFVw==');
+        BMP_TOL := 20;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean Tarromin';
+        BMP := BitmapFromString(16, 18, 'meJx90rsKwkAQhWHt0gR8BDsRQc' +
+        'ULYogXBEERtEljY2NhIdhYCBYWFr6F7+qRX8ZJVoRDYJNvLzObehY' +
+        '1tu+0dlF7H9U232gYxuPOIec1DAPrHePhOdYTWc8+X/WmEO8VSeLN' +
+        '4PSN98nlnfQa64TeEBbEMzQ/ueWMpVwqFbww3jPWUeSpznthxYyPP' +
+        'NXR0tCzHRGuVtvecwvC03tO/vdUxC4+eO6l4Gl7iBVW4wrMW891MI' +
+        'LvT5fm7fZ5Qyc1Zfb4dEY+ma1Czw8go+f6WbE+a0p/vLACwylEjNj' +
+        '5Q2/GGOmmc//pp4E1RwsVq7wAVqmsQg==');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'harralander' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy Harralander';
+        BMP := BitmapFromString(27, 19, 'meJyNlDFLw0AUx+N4yw1+BEFEHC' +
+        'qNBKS1aqkmhlAhpaQ2qO2QIUOGDh0cBAcHv4Vf1ffuXe7eXVIw/Ah' +
+        'JyP3yLvf+F06SsI+ru6ejIBD5tSjGSHkvNjNRxcF0ROBtlyrutVkh' +
+        'qVqbSG4tcFvF8qUB6BqpUxo+vHkE6Bo8BsdWp46wTmW5I6HWwpMmI' +
+        'xWhJVnE50ivyf0CzlqVPaDcE8I7Cm4LxhciGR4U7heoUujhXLh7Bk' +
+        'BibdFpMB2gEBZiklmmOUd+rkSe0nBHqL4IHv7TrNBUOEo8LQjl17p' +
+        'XiLYwRM/ZSTA4F3Fh8aYMY6GAjyXaSKjq0cBzBQlNhUF0CZAQ28ys' +
+        'JvwxLgQb0Eo4RoioUtW6RLpvzYIS8N+6QipYoW1G6Gk9YZ4ixVysK' +
+        'lHW8vuVqxyhmw7dh22IDgnRSXUySAj54jabCxJSOuq0R/jedG1c6M' +
+        'fWCFsnxgSEZY5UawLnrjDlEXZX4UIgyTmUDhRulqJ+I+TPRjbbg0J' +
+        'yzjI0ZEUXnTjoomYL5+PfnWknyoi2QXhB2C3SnbUOtXG24SVMz2DW' +
+        'aEPgRfYuTSvk+1vIj87u909C73B77w8Khj7N');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean Harralander';
+        BMP := BitmapFromString(19, 16, 'meJx9kr0KwjAQgOt4SwafwEdwUf' +
+        'AH/EFRa1GoFEVR6tChQwcHBwfBwcG38FW9yyUxia3wkeG4L5e7C0R' +
+        't2PbhMIJ0AtkM8lAUkbhu8IT5gIimGFRxC6gSrxtSJI5yWTMQd8rF' +
+        'W0LcdxCHJvkLXvsryrgRxWNvkm3+iWixaCt84S0Jxj1EzUGOwhHRQ' +
+        'nSyjSPqaVBfvyI/QFILAsQX45DYrhCynkdbMSK1xt2ViXCIEVXXwh' +
+        'HlZAhPTBPEsxqNpiNqlz6GLgfZnqE3SxzRK6o/mKqYnxjxSkVxViJ' +
+        'vsEJUf6w441l/X8yaqEdPrHIlvIVvxb9FTTLnG+x4KXYy0h0vkdZw' +
+        '8QHKgMz8');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'toadflax' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy Toadflax';
+        BMP := BitmapFromString(19, 18, 'meJyVkz0LgzAQhuOYJf9AcHNMoe' +
+        'jQFhGhJaVOLrY4dOrQwaH/f+nlw+TIxX7Ag0jyPrlcjBljmYHlhnK' +
+        'hRpRMTC9xmz06kBNFBpEf3CAWXSwpSq1YEqINNH2gGzBWXxN9Ob5X' +
+        'ke4CZg+RmDgT+RNalOH09Mb+F/1p8O67VRQbXM5ajuuDT89PomkNl' +
+        '8OidmsWgUUPFcV9phYVg664pjcMPBKr9uySasAsg8YdHGCJkXtRJ/' +
+        'uREqqDItGXMkWr9hRfgHWy5T9yPeape07CPm/ZHo54ioLDwK67ANA' +
+        'gEE1RIAPrA1Wj4N2K8HwDwO1rgA==');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean Toadflax';
+        BMP := BitmapFromString(19, 15, 'meJyVkjEOgCAMRXHs4g1M3Bhxcn' +
+        'JycnBy8f43ESx+qhTU5IUB+vgp1HTGAHvhznUM0CT2JSXRBYVRLKd' +
+        'ZlwhdPyrE3VA3v4gVRvEU/0W8Bs0v9Y0JyDi2QEVEazIusZAHNwMp' +
+        'phse4hp4WH0/6FNhUxyLtNFHMersbhFvtTtFMR+bXPeKEz/FPaojV' +
+        '4B/4ZZY1lHM9eAANew1pg==');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'irit' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy irit';
+        BMP := BitmapFromString(23, 16, 'meJx9k91qwkAQRu3l3vgMIoKIBINVQ2rwD8UEU6' +
+        'ogIW1oK0iRCgHBC0EQCoVCX6LP2i9+Mt1uSuEQ2GTn7MzspN3z22eu' +
+        'CoVa7NWTvrUaWutxYzOtzJsC3oDifQrwidjbLKpUsvEUdAM26BIsi8' +
+        'mOEtJMZ4CSctiqLl3kgHDGtna3zmGBDQyvLjt4iaUuwR7yj6Szn7vH' +
+        'JcJBLXZ4qC7BBkADqMwd1Qt/GC10um8xJDxUlyBVQMm1N4EEmbAbqu' +
+        'sbKki89weea0gkDUjUNBKJXg62uaeIEp5LUCahBNdKSTlEZ2z2kMnn' +
+        'JRJrSgYBJCXfokEk9aRrrTxdcgk8RYJeC8BS0tAl1rqv4heVvGYSLV' +
+        'yX0ICKOF2AhrwEIB+DX5JBIBKZ5Lyk+JwiH8Go5U8J5xOSxmZob0et' +
+        '3bSzD0Dv45FIS4VMcvYof6HDKYWkmU6cwwzA0/98ck93+r2Am9FMjc' +
+        'MsKozy0IMbd4/ZxAZf6eWuz42lgRL5c42KWJR45HcjRk++AbMaF7k=');
+
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean irit';
+        BMP := BitmapFromString(21, 23, 'meJyNlNFqwkAQRe2HCCKCSAgGGw2pwajEmqBSCy' +
+        'JSaRF8EARB8EEQhEKh0J/ot/YmN47TqKVwHsxkzu44O5t6K6y3o3uvR/' +
+        'CbSITc5XL5wCDFoS3UW6FOwyMyBXELoUlKY0fzy21H8S6+UQgtvCpPXC' +
+        '5SHFoCgqQy80BcqiogSbbh4pUx981FJ6MjqEn/bNyBR1bOlemay6C66o' +
+        'sbRzTLgJs+dAeAxWfc0rgmIMKgkOwb6XZp11qHWsejprYZnJpjs2aItO' +
+        'ztyNk/I4FiedJgvoAEwD5f1Ru7sXuYQASVmaMtgoR8UJVjYtkZ3T1Om+' +
+        '8z6NoiKO+fuvfxoi0h75cxh7d0JIiurXjZBOqYRp4su8RSL3WxBN4F6t' +
+        'Jk6Ma8aS48rafKcSrEd6FgyWDT1bq59EGqK1F0wjkBdLVeXaEbHWvdxS' +
+        'IZzjN20jmKaJ3W4dY2PXvbRw0CK+fFudQ5Y6LDbewi0Pp8JVn9NOeiy5' +
+        'Ryd2c/AFjB/3pzj0/Uz/frRgEyq+4hHrnoe5OeYNI66rfqz6xApOHcPV' +
+        'PAVV3faFiCjv+BVoB8Xn4AQXZgeg==');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'avantoe' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy avantoe';
+        Bmp := BitmapFromString(21, 21, 'meJx9lEtrwkAURu1uNrMICAERVA' +
+        'oiSl9YIQ0i0fpICYIulGIpXbjpQij0/y/6JZ+9uZ10hMMwM5lz507' +
+        'mEc+yuGCUvFzVao3INic5rXkAOmnQiuyZosdhOF6MJimB7nUjiyaw' +
+        'ryfAOqAlaPd6/UdH0x6+qBP0OAnT6m7rvX1d9M4kdx2dPeHQUNeTU' +
+        'gcQSVXHGEDdjLOS6UbTf8uDcLBPl8zN08oJAn3wEVZ15IaFm8UO6I' +
+        'Xr5OFSZ9NB9MbQlBtUpCo63At6ODBwRS//1TzQOtPQwG2377ndjg6' +
+        'XmP3RHD4v63KEfDojOFCX7Sb8dXR7aanb91PV9eoF0El/HQy2dXBz' +
+        'DAl13DKtm9VGwx2EK/rdPo/w8Ltw6maW5eOzXRWelm4honz8bsqGI' +
+        'gJuq5x23xIkAg+D3E2u3bng/+r6RtMimF1/8qEVWuA2fkbpfPJBBU' +
+        'TJkhW8Myhj9dahBzEZVo/R8Fk715PlD1h+3lo=');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean avantoe';
+        Bmp := BitmapFromString(22, 20, 'meJyNlE1rwkAQhu0tlxwWFgIiqA' +
+        'SKGOwHqRBsG6RYWZEcvHjpwYP/oP//0Hd3tpNxTER4CMmG98kkM5v' +
+        'V134VWK53ACcPg8GwSke1Z7wxYOrMuEojYUXCwWXt2NAbr1JcKmJ8' +
+        'vUOQkfG8uTDgUkEPVZVT8PFgZ0fLhmndEQfI2iLJyoQM8tFkAMgSF' +
+        'MG6xOSJMtDbScP8xwODyhLXNfQZilMmg3QL2DzJCo80cLXKwClJay' +
+        'g9bddCzWxAvM9AjVCG9tNtjDRQMRJkMQmTyUts6KUBcWLmzA1D+fF' +
+        'NcZ6xTgOYN9EjoSxPOEvitIg4GZQEWdTPU9RhCEhDcbBgcc4INshR' +
+        '7JSgKbGAYHg+eslr+AjK0FcGTxGyOL79jrjLvJHvl9CQ8C5GDbwlr' +
+        '99FGeT2R5CR67eRKYAxePp0NE73Q7+jd9f8/xW3OP4Blo3HwQ==');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'kwuarm' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy kwuarm';
+        Bmp := BitmapFromString(25, 17, 'meJyNlMFKxDAQhuMxh76AIIiH4k' +
+        'GK2Bah1K10UbLQwuZgRAriYS8eFvb9T850ptMktqvho7DbzMdM+pP' +
+        'ieVeMXCglqLbSpkG6F0DVDwL8TIZT8nEUaA9UiUSV96ouEfLABrvT' +
+        'rocne9pHqvJV9A+pUJLeqOyWVW0Vq1wPEmJBBXssNpPnubq6FJV+6' +
+        'mZaGzBYVI2Fa6rfXWFLlYmFg9Vfb4sq8sDSr04IDsobED2eiqFXrm' +
+        'fVxqj0WmUpq8q7+WPROJFqKvcRFZ98lqJHVHLOpj6vkulABWGgExv' +
+        'zEKjQQ7wf9PB9TrUxpCIPZ9I0qyrERvgqyvYcJy/k7OkaUSWfxwXP' +
+        'pJJYLqiYhrFb7QwCk474LbHKDzliAzgY21k1dKNqv6bS224sdEtMH' +
+        'YIEIno6cE5oxkj195gBcocEZyUXQjxmrPJvodxbGKfpC/6TPFzFdN' +
+        'GJ6gcGtOTl');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean kwuarm';
+        Bmp := BitmapFromString(21, 17, 'meJyV080KgkAQwPHt6KHXiA4h0S' +
+        'pBiEYhrKCQh7x06dAD9P6nZpzZaXZRo/jTYeW3jl/ZucnOjS0dtDL' +
+        'GXE5Q4iqsrU1xkHgxDCwoSduYjytRSPK9KXKMLKz3TTJ08M/2cpy0' +
+        'uH+6ZS5jCx86gFSg4KhP8+/YniePHkKuyL88ed4nLV54ugm4jLfA6' +
+        'dDQeb7D5CbTqBH3RDfB5V65YpmDtdby4w45WqqtfnJ5haY51F95DB' +
+        'Xx4C2VW6ct8XAHsrOcU3xwGFzFGPPSxTzeoeZTE3+0I79FfH4AH8C' +
+        '+Wb9f/ExpfuD+bf+9g//EKL52/60tcP1FW/0r3QfzRMFs');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'snapdragon' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy snapdragon';
+        Bmp := BitmapFromString(22, 18, 'meJx9k8FLwzAUh+PxHXL3InjaST' +
+        'ysG8LoqLQ4OoiHHKxoURz0UrA4RETBgwfBf9uXvOw1iW3Lx1iz/r6' +
+        '9l7wuLreLkCMhRDo35BcIlClU1wwtyrsOoe9+kAnioQFvZb0nA8FZ' +
+        'sTzjv3ZBlYEuzCdla03rvgFvTXZ2Ks5nowYEs8jTzYBBZeLkmA2wV' +
+        'j25DqhKY0CnyiLDcA2rMvagARkywKZiRrug+MHgoJ90IdKlyFdOor' +
+        'cG2jSqOTIcUj50EFCi9srF2dDcQ/swbcAsnmaSJM7DBfgG5LaBuoV' +
+        'ajRncPNgRMptA8QFD2xdzoJ9Ab4z7nbQG2e3YIB+7KI7194f430Dz' +
+        '0+0M+0Z+PMuvF8S0YxkzQKlDrAcNb638fjVYifz9jAxQKPO8qgbge' +
+        'n7ezUR1tTto20hQg9dI1EsEv8VxF5MG//VPvMtfnyYJr/l6Q/wBkB' +
+        'HZMg==');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean snapdragon';
+        Bmp := BitmapFromString(23, 18, 'meJyVlD1rwzAQhpVRg/YshU6ZSo' +
+        'cooRBMUlICCriDh2aoCbSQxZDQUkpJIUOGQv9273T6ODu20ogHDxb' +
+        'vw+lO9uh+ObL0hAiIbCjmd4A0GbJ6jNCbOiEuxjeYtXG3m89k8YBP' +
+        'ipdFqwHA+OBa3A46JQDEgZenWhZ2PeKqf14CrAxKWJDzr0pIAnQZs' +
+        'rGYT6SZpSRkaEi8n0tkvpDFEqEeUvENSSiMEWYaJWEQINk8y2qdlk' +
+        'BWaw0jhqdThTK4pFqr3SsayjwhcffE3i5sCBnqEvW+UZ9VLMlDEnc' +
+        '/fUtrF9VK0OAlar89NcCKQzmVWKJkv1WHNwDPZQlnaZU0PKiiSo4f' +
+        'iPWo3+92SUcxUfXzBXNXu9JN354oIenyhC+OaOlJUsL/FZqvqeFba' +
+        'XRjTU3kosWDjD883Nui');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'cadantine' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy cadantine';
+        Bmp := BitmapFromString(22, 20, 'meJx9lEtrwkAUhe1yNi66KEhBFC' +
+        'lCKX1QBoI1aYhEJmgWwQqmiNRNF11I6f9f9ExOep08GvgQE+Z8c2f' +
+        'mTnSY6DCZRauLXu/Se7jyNRgsZhbjD/RdCd80QEoHRgy1+PXsSbA2' +
+        '4/ffT4D/CVIulfg6cg147O9/aCB2wDqqV85gthxuEzEMQ83BroFvX' +
+        'ENl6sJgCTVpMWRLgPho9AiDek3PLDYu4zwdxh7HdxhkCWqe1DwwjA' +
+        '9Z04AKGQfK7Cqb4KzCxgtDuagqNOAcYcBxy57bVbuGQ9ZtQBuwYSR' +
+        'eEnuuoSzGQZbARqobEC9Q+afaf3UY0I22hr/u+s9QSqrIJlgD+5+S' +
+        'YicZHye+GPofp2a8w0BgIDfZYro1YHJ8I1KADpdADCrZuPBYJ2kIa' +
+        'KDkNl/JKdhbGRgVpzaS7pqwkQBS+J1+H+WU5VLf++Z82dvWIhI2id' +
+        'xi2QdQ+Z60GdzrzyB5nsfyYenGTTGIyjk7qQ1ohXO9mNTuXnkERTw' +
+        'wEP4CwxwGSQ==');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean cadantine';
+        Bmp := BitmapFromString(21, 21, 'meJyNlF1rwjAUht1f2MVABmKRIY' +
+        'zBNkZAyloyxZLgvAisF94I/oP9/6u98c2Op2mVwkNpmzwnJycfpnb' +
+        'GNqZ2d5PJ/er1oTJguikjrpqalwT/9CjXO2Csh565j+W7EEMNAUvo' +
+        'uN9rrcfPIToJ0wrNrPWiz6y55oreGfSsR6whqXNoMqRcqVBdvTjsw' +
+        'Wy76ovj9eIYtJISa2Op5/M3rUuSmS6KhjqXVSocZ6r1YxivS60wX6' +
+        '2nNBR0AV5yHe6Zwle3dew32T/Duq8We5uCKC76f82ldNoFT2ED+i7' +
+        'AVu/rROvL1oHF6YdQh5vpWQQsATIH1Bnh+bATPSV/JQHZKlDwXP6e' +
+        'ZEERIR5zjj4iAjeDnM0099p1LochXZ9oWuTjc8tL5jZa4WLxeiFZ6' +
+        'yDohrE4HCvGJ/jyIcapXWy1je52IbV6DfU/d/wGhw==');
+        BMP_TOL := 50;
+      end
+    end
+    else if HERB_TYPE = 'dwarf' then
+      begin
+      with grimmy_item do
+      begin
+        Name := 'Grimy dwarf';
+        Bmp := BitmapFromString(17, 16, 'meJx9kT0LwjAQhs/xlvyG/gIRRA' +
+        'e1KhahQbJkKUoHly4OBf//4jWX5sMchYcOl/fh+ibYABIa0SB9YQ8' +
+        'E1m7YgOq/6jUyPIlo9FYNnlJxmRUAXgw2NsM60QVk5agnKxVJsSgq' +
+        'lK+qzf+PGUyVbG684svmR5NiBPyWtO+iwvmohKt7Dth/FpTdVcsKW' +
+        'zlR+XugWVHvsczLSnl1+YrD7YHaRlIryasuKuu6RdNlhHXuadQwL3' +
+        'WLSNme7ll3CUoy3MUrhRViIem7n1talJ6KMa4whV2e6v8AVV9uag==');
+        BMP_TOL := 30;
+      end
+      with clean_item do
+      begin
+        Name := 'Clean dwarf';
+        Bmp := BitmapFromString(14, 16, 'meJyNkT0OgCAMRnHswhk4gpMbk5' +
+        'MDC4sn8P5XsPbDWH4aSV4Y2hf65zZHUdgf3PaBSMtBlIjf4kRDgwk' +
+        '5ViWqbGMyWXxENEMzd9qkKfHSvzYhpw49woypJ5030UnusK6QKm1x' +
+        '9gl+zVF1fxomkJX66y2Bw1mywL+Bwewqy4Swghs8xEcW');
+        BMP_TOL := 50;
+      end
+    end
+end
+procedure initializePatterns();
+begin
+  vertical := [1,5,9,13,17,21,25,2,6,10,14,18,22,26,3,7,11,15,19,23,27,4,8,12,16,20,24,28];
+  cross := [1,2,5,6,9,10,13,14,17,18,21,22,25,26,3,4,7,8,11,12,15,16,19,20,23,24,27,28];
+end
+function doAction(): Integer;
+var
+  grimmy,clean: TIntegerArray;
+begin
+
+  grimmy := grimmy_item.getSlots();
+  clean :=  clean_item.getSlots();
+
+  //Initiate break
+  if (getTimeRunning >= breakAfterTime) and (USEBREAKS) then
+    exit(0);
+  //When player is not logged in
+  if (not isLoggedIn()) then
+    exit(1);
+  //When there are grimmy herbs in the invo, clean
+  Writeln('Grimmy: ' + IntToStr(Length(grimmy)));
+  if (Length(grimmy) > 0) then
+    exit(2);
+  Writeln('Clean: ' + IntToStr(Length(clean)));
+  //When there are only clean herbs, deposit
+  if (Length(clean) > 0) then
+    exit(3);
+  //When the invo is empty, collect new herbs from the bank
+  if (Length(grimmy) = 0) then
+    begin
+      exit(4);
+    end
+   exit(5);
+end
+procedure executeAction(action: Integer);
+begin
+  case Action of
+    0: breakHandlerCustom();
+    1: initializePlayer();
+    2: cleanHerbs();
+    3: depositHerbs();
+    4: fetchHerbs();
+    5: antiban();
+  end
+  sleep(random(250,400));
+end
+begin
+  declarePlayer();
+  initAL();
+
+  //Log the player in
+  initializePlayer();
+
+  //start the loop
+  loop := true;
+
+  selectHerbType();
+  initializePatterns();
+
+  while loop do
+    begin
+        executeAction(doAction());
+    end
+
+  //Script is finished, you can logout now :)
+  FreeBitmap(grimmy_item.BMP);
+  FreeBitmap(clean_item.BMP);
+  logoutPlayer();
+end.
