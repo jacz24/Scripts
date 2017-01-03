@@ -1,0 +1,769 @@
+program JaczRougeDenCooker;
+{$DEFINE SMART}
+{$i Reflection/Reflection.Simba}
+
+{
+  (-----------------------------------------------------)
+  (                Jacz Rogues' Den Cooker              )
+  (-----------------------------------------------------)
+  Author: jacz24 (https://villavu.com/forum/member.php?u=159331)
+  Last Update: 2016/12/27
+  Version: 1.0
+  Category: Cooking
+  Description: Cooks food at the Rouges' Den
+  Includes: Reflection
+  Features:
+    - Reflection (https://villavu.com/forum/showthread.php?t=111662)
+    - Simple SMART paint (Possibly in the future)
+  Versions:
+    - 1.0 (2016/12/27)
+    Please report bugs!
+  Credits:
+    - Kyle (Lape Reflection)
+    - ineedbot (some reflection methods - https://github.com/ineedbots/Scripts)
+    - Dissimulo and proggy(For the index)
+    - Hoodz (Breaker and some ideas for methods - https://villavu.com/forum/member.php?u=107387)
+    - Mj (some methods from his rouges den cooker - https://villavu.com/forum/member.php?u=143944)
+}
+
+  type TFood = record
+  Raw: string;
+  Cooked: string;
+  XP: Integer;
+  Level: Integer;
+  ShouldCook: Boolean;
+  StatsID: string;
+end;
+
+var
+MyPlayer: TReflectLocalPlayer;
+CookingAnimationIDs: TIntegerArray;
+breakAfterTime, breakLength, startXP, xpGained, xpHour, fishCooked, cookedHour, questList: Integer;
+MyStats: TStats;
+CurrentFood: TFood;
+Food: array[0..19] of TFood;
+const
+
+  P_USERNAME = 'user'; //enter username
+  P_PASSWORD = 'password'; //enter password
+  P_PIN = 'XXXX'; //enter pin
+
+  USEBREAKS = True;
+  breakAfterHours_MIN = 2;
+  breakAfterHours_MAX = 3;
+  breakForMinutes_MIN = 30;
+  breakForMinutes_MAX = 90;
+
+  VERSION = '1';
+  UseAutoChecker = true;
+procedure declarePlayer();
+begin
+  MyPlayer.Username := P_USERNAME;
+  MyPlayer.Password := P_PASSWORD;
+  MyPlayer.Pin := P_PIN;
+  MyPlayer.Active := True;
+  MyPlayer.Create;
+end;
+
+procedure AutoUpdateScript; //Thank Vusn
+var
+  NewFile: integer;
+  OnlineVersion, NewScript, NewFileName: string;
+begin
+  if UseAutoChecker then
+  begin
+    cleardebug();
+    writeln('Checking for script updates...');
+    OnlineVersion := GetPage('https://raw.githubusercontent.com/jacz24/Scripts/master/COOKERVERSION');
+    if (trim(OnlineVersion) > VERSION) then
+    begin
+      writeLn('Script update available!');
+      writeLn('Updating script to v' + OnlineVersion);
+      NewScript := GetPage('http://pastebin.com/raw/fuzFwaHq');
+      NewFileName := ScriptPath + 'JaczRougeDenCooker.simba';
+      NewFile := Rewritefile(NewFileName, true);
+      try
+        WriteFileString(NewFile, NewScript);
+      except
+        begin
+          writeLn('Fatal error writing to ' + NewFileName + '!!');
+          terminatescript;
+        end;
+      end;
+      CloseFile(NewFile);
+      writeLn('New script downloaded to ' + NewFileName + '. Please restart Simba.');
+      TerminateScript;
+    end
+    else
+      writeLn('You have the latest version of the script!');
+  end;
+end;
+
+procedure randomBreakTime();
+begin
+  breakAfterTime := GetTimeRunning + (RandomRange(breakAfterHours_MIN, breakAfterHours_MAX) * 3600000) + RandomRange(2000, 3500000);
+  Writeln('breakAfterTime = ' + Reflect.Time.MsToTime(breakAfterTime, 3));
+  breakLength := (RandomRange(breakForMinutes_MIN, breakForMinutes_MAX) * 60000) + RandomRange(2000, 59000);
+  Writeln('breakLength = ' + Reflect.Time.MsToTime(breakLength, 3));
+end;
+
+procedure setupPlayer();
+begin
+  writeln('Player Setup...');
+  if (not MyPlayer.IsLoggedIn()) then
+    MyPlayer.Login;
+  if (MyPlayer.IsLoggedIn()) then
+  begin
+  MyPlayer.Create;
+  TReflectionCompass.MakePitch(10);
+  Reflect.Antiban.CompassMovement(0, 360, False);
+  end
+end;
+
+procedure setup();
+begin
+  Reflect.MouseSpeed := Random(18, 25);
+  writeln('mouseSpeed set at: ' + intToStr(Reflect.MouseSpeed));
+  Reflect.Logger.Init('Jacz Rogue Den Cooker', 1);
+  startXP := MyPlayer.GetSkillExp(Skill_Cooking);
+  CookingAnimationIDs := [897, 896];
+
+Food :=
+    [['Raw shrimps', 'Shrimps', 30, 1, True, '115'],
+    ['Raw chicken', 'Cooked chicken', 30, 1, True, ''],
+    ['Raw sardine', 'Sardine', 40, 1, True, '125'],
+    ['Raw herring', 'Herring', 50, 5, True,'114'],
+    ['Raw anchovies', 'Anchovies', 30, 1, True, '116'],
+    ['Raw mackerel', 'Mackerel', 60, 10, True, '128'],
+    ['Raw trout', 'Trout', 70, 15, True, '95'],
+    ['Raw cod', 'Cod', 75, 18, True, '118'],
+    ['Raw pike', 'Pike', 80, 20, True, '117'],
+    ['Raw salmon', 'Salmon', 90, 25, True, '96'],
+    ['Raw tuna', 'Tuna', 100, 30, True, '98'],
+    ['Raw karambwan', 'Cooked karambwan', 190, 1, True, ''],
+    ['Raw rainbow fish', 'Rainbow fish', 110, 35, True, ''],
+    ['Raw lobster', 'Lobster', 120, 40, True, '97'],
+    ['Raw bass', 'Bass', 130, 43, True, '124'],
+    ['Raw swordfish', 'Swordfish', 140, 45, True, '100'],
+    ['Raw monkfish', 'Monkfish', 150, 62, True, '99'],
+    ['Raw shark', 'Shark', 210, 80, True, '101'],
+    ['Raw anglerfish', 'Anglerfish', 230, 84, True, ''],
+    ['Raw dark crab', 'Dark crab', 215, 85, True, '']];
+
+  randomBreakTime();
+  setupPlayer();
+end
+
+procedure Draw(text: string);
+begin
+  if (startXP = 0) then
+    xpGained := 0
+  else
+  xpGained := Round(MyPlayer.GetSkillExp(Skill_Cooking) - startXP);
+  xpHour := Round((xpGained) / (GetTimeRunning / 3600000.0));
+  cookedHour := Round((fishCooked) / (GetTimeRunning / 3600000.0));
+  Reflect.Smart.Graphics.Clear;
+  Reflect.Smart.Graphics.DrawClippedText('Jacz Rogues Den, Version ' + VERSION, 'SmallChars', point(9, 25), clWhite);
+  Reflect.Smart.Graphics.DrawClippedText('-----------------------------------', 'SmallChars', point(9, 38), clWhite);
+  Reflect.Smart.Graphics.DrawClippedText('Status: ' + text, 'SmallChars', point(9, 51), clWhite);
+  Reflect.Smart.Graphics.DrawClippedText('Exp gained: ' + toStr(xpGained) + ' (' + (toStr(xpHour)) + ' p/hr)', 'SmallChars', point(9, 68), clYellow);
+  Reflect.Smart.Graphics.DrawClippedText('Fish Cooked: ' + toStr(fishCooked) + ' (' + (toStr(cookedHour)) + ' p/hr)', 'SmallChars', point(9, 85), clYellow);
+  Reflect.Smart.Graphics.DrawClippedText('Total Runtime: ' + Reflect.Time.MsToTime(GetTimeRunning, 3), 'SmallChars', point(9, 102), clYellow);
+end;
+
+procedure breakHandler();
+begin
+draw('starting breakhandler');
+  while (MyPlayer.IsLoggedIn) do
+    MyPlayer.Logout;
+  while not (getTimeRunning >= (breakAfterTime + breakLength)) do
+  begin
+    draw('Break handler active');
+    Writeln('TimeRunning: ' + Reflect.Time.MsToTime(getTimeRunning, 3));
+    Writeln('Breaking till: ' + Reflect.Time.MsToTime((breakAfterTime + breakLength), 3));
+    Writeln('Time left until break is done: ' + Reflect.Time.MsToTime(((breakAfterTime + breakLength) - getTimeRunning), 3));
+    Sleep(5000);
+    ClearDebug;
+  end;
+  randomBreakTime;
+end;
+
+function TReflectLocalPlayer.isDoingAnim(animationIDs:TIntegerArray;time:integer):Boolean;
+var _time:treflecttimer;
+begin
+  _time.restart;
+  while (_time.Elapsedtime < time) and Self.isLoggedIn do begin
+     if(InIntArray(animationIDs, Self.GetAnimation)) then
+     begin
+       result := true;
+       exit;
+     end;
+     wait(50);
+  end;
+end;
+
+function IsMenuOpen:boolean;
+var p : tpoint;
+    tempTPA : TPointArray;
+begin
+  getClientDimensions(P.X, P.Y);
+  if findColorsTolerance(tempTPA, 4674653, 0, 0, P.x-1, P.y-1, 0) then
+    result := true;
+end;
+
+procedure fastClick(button: Integer);
+var
+  x, y: integer;
+begin
+  getMousePos(x, y);
+  holdMouse(x, y, button);
+
+  Wait(RandomRange(50, 100));
+
+  getMousePos(x, y);
+  releaseMouse(x, y, button);
+end;
+
+function R_TileOnMS(Tile: TPoint; var OutputPoint: TPoint; x: integer = 0; y: integer = 0; z: integer = 0): boolean;
+var
+  tempB: TBox;
+begin
+  OutputPoint := TReflectionTiles.TileToMS(Tile, x, y, z);
+  tempB := intToBox(MSX1, MSY1, MSX2, MSY2);
+  result := PointInBox(OutputPoint, tempB);
+end;
+
+procedure exitMenu;
+var timer : TReflectTimer;
+    _x, _y : integer;
+begin
+  timer.Restart;
+  while IsMenuOpen and (timer.Elapsedtime < 2500) do begin
+    getMousePos(_x, _y);
+    Reflect.Mouse.Move(Point(_x, _y-10), 5, 5);
+  end;
+end;
+
+
+function RightClickAction(Action: string): boolean;
+begin;
+  Reflect.Mouse.Click(MOUSE_RIGHT);
+  wait(random(100,200));
+  if Reflect.Text.ChooseOption(Action) then
+  begin
+    Exit(True);
+  end else
+  begin
+    Exit(False);
+  end;
+end;
+
+function TFood.CanCook(): Boolean;
+begin
+  Exit(Self.ShouldCook and (MyPlayer.GetSkillLevel(SKILL_COOKING) >= Self.Level));
+end
+
+procedure CheckFood();
+var
+  FoodIndex: Integer;
+  BankFood: TReflectBankItem;
+begin
+  if not BankFood.Find(CurrentFood.Raw) then
+    begin
+      for FoodIndex := 0 to High(Food) do
+      begin
+        if (BankFood.Find(Food[FoodIndex].Raw) and (Food[FoodIndex].CanCook())) then
+          begin
+            CurrentFood := Food[FoodIndex];
+            draw('Switching to ' + CurrentFood.Raw);
+            Exit();
+          end;
+      end;
+      draw('No More raw food');
+      TerminateScript;
+    end;
+    draw('Still have ' + CurrentFood.Raw + ' in bank');
+end;
+
+function R_InteractTile(tile:Tpoint; actions:tstringarray; x:integer = 0; y:integer = 0; z:integer = 0; doSecond:boolean=true):boolean;
+var tries, pitch : integer;
+    RSTile, MouseLoc : TPoint;
+    yaw : extended;
+begin
+  for tries:=0 to 1 do begin
+    if tries = 1 then begin
+      yaw := 360 - Reflect.Compass.AngleDeg;
+      pitch := round((Reflect.Compass.GetPitch - 128) / 25.5);
+      Reflect.Compass.Make('rand');
+      Reflect.Compass.MakePitch(9);
+    end;
+
+    if R_TileOnMS(Tile, RSTile, x, y, z) then begin
+      getMousePos(MouseLoc.x, MouseLoc.y);
+      if not Reflect.Text.OptionExistsMulti(actions) or (distance(MouseLoc.x, MouseLoc.y, rsTile.x, rsTile.y) > 5) then
+        Reflect.Mouse.Move(rsTile, 5, 5);
+
+      if Reflect.Text.IsUpTextMulti(actions) then begin
+        if isMenuOpen then begin
+          result := Reflect.Text.ChooseOptionMulti(actions);
+        end else begin
+          FastClick(mouse_left);
+          if isArrInStr(actions, 'Walk') then
+            result := Reflect.Mouse.DidClick(false)
+          else
+            result := Reflect.Mouse.DidClick(True);
+        end;
+      end else begin
+        if isMenuOpen then begin
+          result := Reflect.Text.ChooseOptionMulti(actions);
+        end else begin
+          if Reflect.Text.OptionExistsMulti(actions) then begin
+            FastClick(mouse_right);
+            result := Reflect.Text.ChooseOptionMulti(actions);
+          end;
+        end;
+      end;
+    end;
+ if tries = 1 then begin
+      Reflect.Compass.Make(yaw);
+      Reflect.Compass.MakePitch(pitch);
+    end;
+
+    if result then
+      break
+    else if isMenuOpen then
+      exitMenu;
+
+    if not doSecond then
+      break;
+  end;
+end;
+
+procedure HandleRandoms;
+var
+  i, j, me_indice: integer;
+  _npcs: TReflectNPCArray;
+  randoms: tstringarray;
+begin
+  randoms := ['molly', 'niles', 'miles', 'giles', 'sandwich lady', 'drunken dwarf', 'genie', 'highwayman', 'dr jekyll', 'cap' 'n hand', 'security guard', 'rick turpentine', 'mysterious old man', 'frog', 'null', 'mime', 'sergeant damien', 'freaky forester', 'postie pete', 'tilt', 'flippa', 'leo', 'pillory guard', 'evil bob'];
+  _npcs.GetAll;
+  me_indice := TReflectLocalPlayer.GetPlayerIndex;
+  for i := 0 to high(_npcs) do
+  begin
+    if (_npcs[i].getInteractingIndex = me_indice) then
+    begin
+      for j := 0 to high(randoms) do
+      begin
+        if (pos(randoms[j], lowercase(_npcs[i].getName)) > 0) then
+        begin
+          if R_InteractTile(_npcs[i].getTile, ['Dismiss'], 0, 0, 50) then
+          begin
+            sleep(2500 + random(1000));
+            draw('Dismissed random: ' + _npcs[i].getname);
+          end;
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure Antiban();
+begin
+  handleRandoms;
+  if (random(0, 50) = 10) then
+  begin
+  Reflect.MouseSpeed := randomRange(15, 30);
+  draw('Performing antiban...');
+  case random(18) of
+    0:Reflect.Antiban.RandomRClick;
+    1:Reflect.Antiban.hoverSkill(-1);
+    2:Reflect.Antiban.PickUpMouse;
+    3:Reflect.Antiban.SleepAndMoveMouse(random(2500));
+    4:Reflect.Antiban.RandomMovement;
+    5:Reflect.Antiban.CompassMovement(0, 360, false);
+    6:Reflect.Antiban.HumanRandomMouse;
+    7:Reflect.Antiban.ExamineInv;
+    8:Reflect.Antiban.RandomFKeys(false);
+    9:Reflect.Antiban.RandomTab(false);
+    10:Reflect.Antiban.BoredHuman;
+    11:Reflect.Antiban.RandomTab(true);
+    12:Reflect.Antiban.MMouseOffClient('rand');
+    13:Reflect.Antiban.MMouseOffClient('top');
+    14:Reflect.Antiban.MMouseOffClient('bottom');
+    15:Reflect.Antiban.MMouseOffClient('left');
+    16:Reflect.Antiban.MMouseOffClient('right');
+    17:Reflect.Antiban.hoverSkill(Skill_Cooking);
+  end;
+  Draw('Continuing Cooking');
+  wait(random(500,1500));
+end;
+  end;
+
+function TReflectionGametab.CurrentColor:Integer;
+var i : integer;
+    TNB : TBox;
+    Pnt : TPoint;
+begin
+  for i:=0 to 13 do begin
+    case i of
+      0: TNB:=[535,172,540,176];
+      1: TNB:=[564,172,571,176];
+      2: TNB:=[596,172,602,176];
+      3: TNB:=[630,172,635,176];
+      4: TNB:=[663,172,670,176];
+      5: TNB:=[696,172,703,176];
+      6: TNB:=[730,173,736,180];
+      7: TNB:=[525,469,534,473];
+      8: TNB:=[563,469,570,473];
+      9: TNB:=[596,469,602,473];
+      10:TNB:=[629,469,634,473];
+      11:TNB:=[662,469,669,473];
+      12:TNB:=[695,469,700,473];
+      13:TNB:=[728,469,733,473];
+    end;
+
+    if findColorTolerance(Pnt.x, Pnt.y, 1910383, TNB.X1, TNB.Y1, TNB.X2, TNB.Y2, 13) then
+      break;
+  end;
+
+  if i <> 14 then begin
+    case i of
+      0: Result := Gametab_CombatOptions;
+      1: Result := Gametab_Stats;
+      2: Result := questList;
+      3: Result := GameTab_Inventory;
+      4: Result := Gametab_WornEquipment;
+      5: Result := Gametab_Prayer;
+      6: Result := Gametab_Magic;
+      7: Result := Gametab_ClanChat;
+      8: Result := Gametab_FriendsList;
+      9: Result := Gametab_IgnoreList;
+      10:Result := Gametab_Logout;
+      11:Result := Gametab_Options;
+      12:Result := Gametab_Emotes;
+      13:Result := Gametab_MusicPlayer;
+    end;
+    //writeln(i);
+  end else begin
+    Result := -1;
+  end;
+
+end;
+
+Function GetUpText_WhiteColor: String;
+Begin
+  Result:=GetTextAt(8, 8, 0, 5, 4, 14541281, 55, 25, 'UpChars07');
+End;
+
+function slotActivated(i : integer):boolean;
+var TB:Tbox;
+    x,y : integer;
+begin
+  TB := Reflect.Inv.InvBox(i);
+  Result := findColor(x, y, 16777215, TB.x1, TB.y1, TB.x2, TB.y2);
+end;
+
+function anySlotActivated(soft:boolean=false):boolean;
+var _string : string;
+    i : integer;
+begin
+  if Reflect.GameTab.CurrentColor <> Gametab_Inventory then
+    exit(false);
+
+  if not soft then begin
+    _string := GetUpText_WhiteColor;
+    if (pos('->', _string) <= 0) and (pos('Use', _string) <= 0) then
+      exit(false);
+  end;
+
+  for i:=1 to 28 do
+    if slotActivated(i) then
+      exit(true);
+end;
+
+
+function MoveMouseToFood(Food: String): Boolean;
+var
+  FoodToCook: TReflectInvItem;
+begin
+  if FoodToCook.Find(Food) then
+  begin
+    Reflect.Mouse.Move(FoodToCook.GetBox()); // Todo verify that mouse is over food
+    wait(random(200,300));
+    Exit(True);
+  end
+  else
+  begin
+    writeln('Didnt find ' + Food);
+    Exit(False);
+  end;
+end;
+
+function IsItemInInventory(Item : String): Boolean;
+var
+  Items: TStringArray;
+begin
+  Items := [Item];
+  //writeln('Checking if ' + Item + ' is inventory');
+  if TReflectionInventory.Contains(Items)  then
+  begin
+    //writeln(Item + ' is in inventory');
+    Exit(True);
+  end else
+  begin
+    //writeln(Item + ' is not in inventory');
+    Exit(False);
+  end;
+end;
+
+function MoveMouseToObject(Obj: String; Distance: Integer): Boolean;
+var
+  Fire: TReflectObject;
+begin
+  if Fire.Find(objGame, Obj, Distance) then
+  begin
+    Reflect.Logger.Debug('Moving mouse to ' + Obj);
+    Reflect.Mouse.Move(Fire.GetMSPoint, 5, 5);
+    wait(random(200,300));
+    Reflect.Logger.Debug('Moved mouse to ' + Obj);
+    Exit(True);
+  end
+  else
+  begin
+    Reflect.Logger.Fatal('Unable to find fire');
+    Exit(False)
+  end;
+end;
+
+function findAnyRaw(): Boolean;
+var
+  FoodIndex: Integer;
+  InvFood: TReflectInvItem;
+begin
+  result := false;
+  if IsItemInInventory(CurrentFood.Raw) then
+    Exit(True);
+  for FoodIndex := 0 to High(Food) do
+  begin
+    if IsItemInInventory(Food[FoodIndex].Raw) then
+    begin
+      writeln('Inventory contains raw food');
+      CurrentFood := Food[FoodIndex];
+      Exit(True);
+    end;
+  end;
+ // Reflect.Logger.Debug('Inventory does not contain cooked food');
+end;
+
+function IsWidgetUp(Parent: Integer; Child: Integer): Boolean
+var
+  Widget: TReflectWidget;
+  Count: Integer;
+  Timer: TReflectTimer;
+  RandomTime: Integer;
+begin
+  Timer.Restart();
+  RandomTime := RandomRange(1500, 3000);
+  while Timer.ElapsedTime() < RandomTime do
+  begin
+    if Widget.IsValid(Parent, Child) then
+    begin
+      Reflect.Logger.Debug('Widget is up and visible');
+      wait(random(800,1200));
+      Exit(True);
+    end;
+  end;
+  Exit(False);
+end;
+
+function SelectAllKarambwan(): Boolean;
+var
+  SelectionWidget: TReflectWidget;
+begin
+  if IsWidgetUp(303, 11) then // Todo extract to constants
+  begin
+    Reflect.Logger.Debug('Selecting all karambwan');
+    SelectionWidget.GetWidget(303, 11);
+    SelectionWidget.Interact('Make X');
+    wait(random(800,1200));
+    Reflect.Logger.Debug('Sending amount to cook');
+    Reflect.Keyboard.TypeSend(Int64ToStr(random(28,99)));
+    SelectionWidget.Free();
+    Exit(True);
+  end;
+  Exit(False);
+end;
+
+function SelectAll(): Boolean;
+var
+  SelectionWidget: TReflectWidget;
+begin
+  if IsWidgetUp(307, 6) then // Todo extract to constants
+  begin
+    Reflect.Logger.Debug('Selecting all');
+    SelectionWidget.GetWidget(307, 6);
+    SelectionWidget.Interact('All');
+    SelectionWidget.Free();
+    Exit(True);
+  end;
+  Exit(False); // Todo, do something with the false return
+end;
+
+procedure cookHandler();
+begin
+ if (MyPlayer.IsAnimating) or (Reflect.Bank.IsOpen) then
+  exit;
+ if (not anySlotActivated) then
+  begin
+    draw('Cooking food');
+    begin
+    if (Reflect.Gametab.CurrentColor = questList) then
+      Reflect.Mouse.Move(Point(646,185), 6,6);
+      Reflect.Mouse.Click(MOUSE_LEFT);
+      if (Reflect.Gametab.CurrentColor <> Gametab_Inventory) then
+      Reflect.Gametab.Open(Gametab_Inventory);
+      if MoveMouseToFood(CurrentFood.Raw) then
+      begin
+        Reflect.Mouse.Click(MOUSE_LEFT);
+        if MoveMouseToObject('Fire', 2) then
+        begin
+          RightClickAction('Fire');
+          if CurrentFood.Raw = 'Raw karambwan' then
+            SelectAllKarambwan()
+          else
+            SelectAll();
+          wait(random(1500,2500));
+        end;
+        Reflect.Logger.Debug('Mouse did not go to fire');
+      end;
+    end;
+end;
+  end
+
+procedure openBank();
+var
+Banker: TReflectNPC;
+begin
+ if (not Reflect.Tiles.NearTile(Point(3043,4972), 2)) or (not Reflect.Tiles.NearTile(Point(3042, 4973), 2)) then
+begin
+Draw('Running to fire');
+MyPlayer.BlindWalkMM(Point(3043, 4972), 4);
+end;
+  fishCooked := fishCooked + (Reflect.Inv.Count);
+ wait(random(200,2000));
+  if (Reflect.Bank.IsPinOpen()) then
+    MyPlayer.EnterPin;
+  if (Reflect.Bank.IsOpen) then
+    exit;
+  if Banker.Find('Emerald Benedict') then
+  begin
+    draw('Opening Bank');
+    Reflect.Mouse.Move(Banker.GetMSPoint, 4, 4);
+    wait(random(500, 1500));
+    RightClickAction('Bank');
+    wait(random(500, 1500));
+  end
+  //add to check if you are in the coordinates by the banker
+end
+
+procedure bankHandler();
+var
+  FoodIndex: Integer;
+  BankFood, BankItem: TReflectBankItem;
+begin
+  if (Reflect.Bank.IsPinOpen()) then
+    MyPlayer.EnterPin;
+    draw('Banking');
+  if (IsItemInInventory(CurrentFood.Cooked) or (IsItemInInventory(CurrentFood.Raw)) or (Reflect.Inv.Count > 0)) then
+    begin
+    draw('Deposting All');
+    wait(random(500,800));
+    Reflect.Bank.DepositAll(); // Todo make this use a widget
+    CheckFood();
+    end;
+  if not BankFood.Find(CurrentFood.Raw) then
+    begin
+      for FoodIndex := 0 to High(Food) do
+      begin
+        if (BankFood.Find(Food[FoodIndex].Raw) and (Food[FoodIndex].CanCook())) then
+          begin
+            CurrentFood := Food[FoodIndex];
+            Draw('Switching to ' + CurrentFood.Raw);
+            Exit();
+          end;
+      end;
+      Draw('No More raw food');
+      Reflect.Interfaces.CloseAll;
+      MyPlayer.Logout;
+      TerminateScript();
+    end;
+    Reflect.Logger.Debug('Still have ' + CurrentFood.Raw + ' in bank');
+begin
+  if BankItem.Find(CurrentFood.Raw) then
+  begin
+    Draw('Found ' + CurrentFood.Raw + ' in bank');
+    wait(random(500,700));
+
+    case random(2) of
+    0: BankItem.Withdraw(28);
+    1: BankItem.Withdraw(-1);
+    //2: BankItem.Withdraw(StrToInt('All-but-1'));
+    end;
+
+    wait(random(500,700));
+  end
+  else if not IsItemInInventory(CurrentFood.Raw) then
+  begin
+    Draw('Could not find any items while withdrawing');
+    TerminateScript();
+  end;
+end;
+
+end;
+
+function getState(): Integer;
+begin
+  if (getTimeRunning >= breakAfterTime) and (USEBREAKS) then
+    exit(7);
+  if (not MyPlayer.IsLoggedIn()) then //login player
+    exit(0);
+  if ((Reflect.Gametab.CurrentColor <> Gametab_Inventory) and (not Reflect.Bank.IsOpen)) then  //Switch to inventory tab
+    exit(1);
+  if (not Reflect.Bank.IsOpen()) and (not IsItemInInventory(CurrentFood.Raw)) then
+    exit(5);
+  if (not Reflect.Bank.IsOpen()) and (findAnyRaw()) and (not MyPlayer.IsAnimating) and (not MyPlayer.isDoingAnim(CookingAnimationIDs,1000)) then //cook food
+    exit(3);
+  if (Reflect.Bank.IsOpen()) and (findAnyRaw()) then
+    exit(2);
+  if (Reflect.Bank.IsOpen()) and (not IsItemInInventory(CurrentFood.Raw)) then
+    exit(6);
+ sleep(random(100,200));
+ exit(4);
+end;
+
+procedure executeState(State: Integer);
+begin
+  case (State) of
+    0: setupPlayer();
+    1: Reflect.Gametab.Open(Gametab_Inventory);
+    2: Reflect.Interfaces.CloseAll;
+    3: cookHandler();
+    4: antiban();
+    5: openBank();
+    6: bankHandler();
+    7: breakHandler();
+  end;
+  //stats_Commit();
+  sleep(Random(100, 200));
+  end;
+begin
+Reflect.Setup();
+declarePlayer();
+AutoUpdateScript();
+setup();
+//stats_setup();
+CurrentFood := Food[0];
+repeat
+  executeState(getState());
+until (false);
+end.
