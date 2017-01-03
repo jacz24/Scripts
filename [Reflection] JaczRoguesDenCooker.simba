@@ -79,7 +79,7 @@ begin
     begin
       writeLn('Script update available!');
       writeLn('Updating script to v' + OnlineVersion);
-      NewScript := GetPage('http://pastebin.com/raw/fuzFwaHq');
+      NewScript := GetPage('https://raw.githubusercontent.com/jacz24/Scripts/master/%5BReflection%5D%20JaczRoguesDenCooker.simba');
       NewFileName := ScriptPath + 'JaczRougeDenCooker.simba';
       NewFile := Rewritefile(NewFileName, true);
       try
