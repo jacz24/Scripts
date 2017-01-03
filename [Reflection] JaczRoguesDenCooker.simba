@@ -74,7 +74,7 @@ begin
   begin
     cleardebug();
     writeln('Checking for script updates...');
-    OnlineVersion := GetPage('https://raw.githubusercontent.com/jacz24/Scripts/master/COOKERVERSION');
+    OnlineVersion := GetPage('https://raw.githubusercontent.com/jacz24/Scripts/master/VERSION/COOKERVERSION');
     if (trim(OnlineVersion) > VERSION) then
     begin
       writeLn('Script update available!');
